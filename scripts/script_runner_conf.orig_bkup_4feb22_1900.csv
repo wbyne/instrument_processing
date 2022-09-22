@@ -1,0 +1,31 @@
+#Concept: this file is designed to move the individual stations and parameters out of the script
+# files so that it is easier to manage, especially since we're about to add a buuuuunch of new
+# stations. 
+# format should be: 
+#	script_name: stations:listNo: StaNo1,StaNo2,...
+#	script_name: stat_desc:listNo: StaNo1|Desc1,StaNo2|Desc2
+#	script_name: params: param_list
+# -fwb-23Jan22
+
+global_station_list:stations:600,5000,5100,5200,7500,7600
+
+alerts_not_reporting_2hrs.pl:params:0:RAIN
+alerts_not_reporting_2hrs.pl:stations:0:600,5000,5100,5200,7500,7600,9000
+alerts_not_reporting_2hrs.pl:stat_desc:0:600|Test,5000|Harmon_Bluff,5100|Vernon_River,5200|Bacon_Golf,7500|Test,7600|Test,9000|Test
+
+batch_plot_interactive_commands.sh:stations:0:600,7500,7600,9000
+
+batch_plot_interactive_commands.Sav.sh:stations:0:5000,5100,5200
+
+calc_stats.pl:params:0:RAIN
+calc_stats.pl:stations:0:600,5000,5100,5200,7500,7600,9000
+
+calc_stats_alldata.pl:params:0:RAIN,LIGHT,TEMP,DEPTH,ANALOG,TEMP_RTC
+calc_stats_alldata.pl:stations:0:600,5000,5100,5200,7500,7600,9000
+calc_stats_alldata.pl:stat_desc:0:
+
+calc_stats_alldata.Sav.pl:params:0:RAIN,LIGHT,TEMP,DEPTH,ANALOG,TEMP_RTC
+
+alerts_all_params.pl:params:0:RAIN
+alerts_all_params.pl:stations:0:1,2,3,4,5,6,7,8,9,10,11,12,50,51,52,75,76,90
+alerts_all_params.pl:stat_desc:0:

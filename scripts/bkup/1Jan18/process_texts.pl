@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w 
-# 26jan16-fwb-added code to seamless sort by year to fix those year rollovers.
+# 26jan126-fwb-added code to seamless sort by year to fix those year rollovers.
 # Every 5 minutes, copy the working input file(s), open up the text file, process all datapoints, and 
 # write a last line file to let me know where we last processed the file.
 # format is #STAPRDDMMYYHHMMVAL
@@ -48,7 +48,7 @@ my @hour;
 my @minute;
 my @value;
 
-use sort "stable"; #changed from "_mergesort" 19Sep21 b/c sort now uses a stable mergesort
+use sort "_mergesort";
 
 my $savepath;
 
@@ -339,16 +339,16 @@ sub presort { #need to add yr/mo/dy and then do the sort to properly sort "01"'s
 	for ($ii=0; $ii<=$#new_data; $ii++) {
 	    #		@tmptmp = split "/",$new_data[$ii];
 	        @tmptmp = split " ",$new_data[$ii];
-		$yrtmp2=substr($tmptmp[2],6,2);
-		$yrtmp = $yrtmp2.":".$tmptmp[2].":".$tmptmp[3]; #yes, I know this should be fixed some other way. This fixes the problem of a station code 101/201/etc, showing up in the sort later because its different.  I want it in order. fwb-24june17_1359.  This fix broke the annual rollover fix for New Years Day, so I added the year back to the data string before sorting: 1Jan18.
+		#$yrtmp=substr($tmptmp[2],0,2);
+		$yrtmp = $tmptmp[2].":".$tmptmp[3]; #yes, I know this should be fixed some other way. This fixes the problem of a station code 101/201/etc, showing up in the sort later because its different.  I want it in order. fwb-24june17_1359
 		$new_data[$ii]=$yrtmp." ".$new_data[$ii];	
 	}
 }
 
 sub postsort {
 	#$station_param[$j][$k][$l]=$station[$i]." ".$parameter[$i]." ".$day[$i]."/".$month[$i]."/".$year[$i]." ".$hour[$i].":".$minute[$i]." ".$value[$i];
-	for ($ii=0; $ii<=$#new_data; $ii++) { #shouldn't this count to sorted_data?  I seem to remember something odd here.  No fixing it tonight - 1Jan18.
-		$yrtmp=substr($sorted_data[$ii],17); #no end is given for substr, so it returns all the way to the end (strips the year) #wb-21June17-changed from 3 to 13 to remove the year/mo/dy:hr:min I added above in presort. this should fix the problem where 101/201/etc get sorted at the end of 100/200/etc.
+	for ($ii=0; $ii<=$#new_data; $ii++) {
+		$yrtmp=substr($sorted_data[$ii],14); #no end is given for substr, so it returns all the way to the end (strips the year) #wb-21June17-changed from 3 to 13 to remove the year/mo/dy:hr:min I added above in presort. this should fix the problem where 101/201/etc get sorted at the end of 100/200/etc.
 		$sorted_data[$ii]=$yrtmp;
 	}	
 }

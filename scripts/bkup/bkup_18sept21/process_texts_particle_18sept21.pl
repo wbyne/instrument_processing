@@ -24,6 +24,8 @@
 		
 #added for auto-registration
 my @IMEI;
+my @IMEI_list;
+my @IMEI_sorted;
 my @lat;
 my @lon;
 my @sig_strength;
@@ -48,7 +50,7 @@ my @hour;
 my @minute;
 my @value;
 
-use sort "stable"; #changed from "_mergesort" 19Sep21 b/c sort now uses a stable mergesort
+use sort "_mergesort";
 
 my $savepath;
 
@@ -82,7 +84,7 @@ else { $lastline = 0; }
 $i=0;
 $k=0;
 
-open (INPUT_FILE, "$savepath/log/screenlog.0.processed") or die "Can\'t find INPUT_FILE\n";
+open (INPUT_FILE, "$savepath/log/screenlog.0.particle.processed") or die "Can\'t find INPUT_FILE\n";
 while ($_=<INPUT_FILE>) {
         if ($k < $lastline) { #skip to the end of the file
 		$k++;
@@ -185,60 +187,35 @@ $k=0;
 
 #### begin now split the sorted data
 for ($i=0; $i<=$#condensed_data; $i++) {
-# is it an auto-registration line?  If so, put it in a different location for adding to the gis system
-	my @test_array = split",",$condensed_data[$i];
-	if ($test_array[0] =~ /99$/) { #new IMEI or first start marker
-##	if ($condensed_data[$i] =~ /^IMEI/) {
-		#first, check the length of the string for validity, probably just a max length
-		($IMEI[$j],$lat[$j],$lon[$j],$sig_strength[$j],$timestring[$j],$rsthr[$j],$rstmin[$j]) = split ",",$condensed_data[$i]; # IMEI supposed to be 15 digits long, need to verify format
-##		$IMEI[$j]=substr($IMEI[$j],4);
-                if (($IMEI[$j] == 9999) || ($IMEI[$j] == 10999) || ($IMEI[$j] == 25999)) { #yes, these 3 are still out there...24june17_1246
-		    $IMEI[$j] = $IMEI[$j]-999;
-		}
-		else {
-		    $IMEI[$j] = $IMEI[$j]-99;
-		}
-		$j++;
-	}
-	# if it's a dataline, we should check the length
-	else {
-		($station[$k],$parameter[$k],$day[$k],$month[$k],$year[$k],$hour[$k],$minute[$k],$value[$k]) = split ",",$condensed_data[$i]; #needs to be reconciled to IMEI number
+    # is it an auto-registration line?  If so, put it in a different location for adding to the gis system
+    # we don't actually use this with the particle boards; might add it back later...fwb-30May20...actually no we won't because we configure the particle boards on the fly
+    my @test_array = split",",$condensed_data[$i];
+    if ($#test_array != 7) {
+	print STDOUT "Error with line: ".$i." in file screenlog.0.particle.processed\n";
+    }
+    else {
+    	($station[$k],$parameter[$k],$day[$k],$month[$k],$year[$k],$hour[$k],$minute[$k],$value[$k]) = split ",",$condensed_data[$i]; #needs to be reconciled to IMEI number
 		$k++;
 	}
 }
 #### end now split the sorted data
 
-#### begin process IMEI data to set up stations
-#### check for existence of file
-####  if exists, append to it, if not, create it.
-####  just for reference for the future, mkdir -p tmp/test/testing will create tmp/test/testing (all intermediate dirs required)-wb-24june17
-for ($i=0; $i<=$#IMEI; $i++) {
-	if (! -d "$savepath/data/site/$IMEI[$i]" ) { #checks for station
-		system ("mkdir $savepath/data/site/$IMEI[$i]");
-		if ($? != 0) { 
-			print STDOUT "Unable to mkdir $IMEI[$i]...Stopping\n";
-			exit;
-		}
-	}
-	if (! -e "$savepath/data/site/$IMEI[$i]/$IMEI[$i].txt" ) { 
-		system ("touch $savepath/data/site/$IMEI[$i]/$IMEI[$i].txt");
-		if ($? != 0) { 
-			print STDOUT "Unable to create $IMEI[$i].txt...Stopping\n";
-			exit;
-		}
-	}
-	open  (STAT_IMEI, ">>","$savepath/data/site/$IMEI[$i]/$IMEI[$i].txt") or warn "Can't open $IMEI[$i]\n";
-	print STAT_IMEI "$IMEI[$i],$lat[$i],$lon[$i],$sig_strength[$i],$timestring[$i],$rsthr[$i],$rstmin[$i]\n";
-	close (STAT_IMEI);
-	# we handle construction of the $parameter directories when we encounter them below.
-}
-#### end process IMEI data to set up stations
-
 #### begin process instrument data
 for ($i=0; $i<=$#station; $i++) {
+        #Salvaging these lines for now.  May use control codes again.
 	#station and directory should already exist if we've gotten here.
         $localStation = int($station[$i]/100); #catches control codes so the script doesn't think 401 is different than 400-fwb-4june17_1017
 	$localStation = $localStation*100;
+	#begin create station directory if it doesn't exist
+	if (! -d "$savepath/data/site/$localStation") {
+		system ("mkdir $savepath/data/site/$localStation");
+		if ($? != 0) { 
+			print STDOUT "Unable to mkdir $localStation...Stopping\n";
+			exit;
+		}
+	}
+	#end create station directory
+	#begin create parameter directory
 	if (! -d "$savepath/data/site/$localStation/$parameter[$i]") {
 		system ("mkdir $savepath/data/site/$localStation/$parameter[$i]");
 		if ($? != 0) { 
@@ -246,6 +223,8 @@ for ($i=0; $i<=$#station; $i++) {
 			exit;
 		}
 	}
+	#end create parameter directory
+	#begin create station_parameter file if it doesn't exist
 	if (! -e "$savepath/data/site/$localStation/$parameter[$i]/$localStation"."_"."$parameter[$i].txt") {
 		system ("touch $savepath/data/site/$localStation/$parameter[$i]/$localStation"."_"."$parameter[$i].txt");
 		if ($? != 0) { 

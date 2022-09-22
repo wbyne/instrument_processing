@@ -1,0 +1,75 @@
+#!/bin/bash
+#for use on beagle.  rotates the screenlog.0 file every day at noon,
+# and then copies the file up testing.hydrologicdata.org (backup)
+# and then to hydrologicdat.org -wb-26June17
+
+PATH="/mnt/space/workspace/instrument_processing/scripts/:$PATH"
+
+for file in `ls /mnt/space/workspace/instrument_processing/log/screenlog.0`
+
+
+# %% is suffix removal and replacement
+# % is suffix removal
+# # is prefix removal
+# ## is prefix removal and replacment
+
+do 
+#filenosufx=${file%S***};
+echo ${file}
+sleep 5s
+cp ${file} ${file}.tmp
+echo "copy of screenlog.0 to tmp complete\n";
+sleep 5s
+quick_extraction.short_version.pl ${file}.tmp >> ${file}.processed
+echo "quick_extraction.short_version complete\n"
+process_texts.pl 
+echo "process_texts.pl complete\n"
+rm ${file}.tmp
+echo "removed tmp file"
+done
+
+#taken from the bash & date man pages and http://www.cyberciti.biz/faq/how-to-read-time-in-shell-script/
+nowhr=$(date +"%H") #get current hour
+nowmin=$(date +"%M") #get current minutes
+nowmonth=$(date +"%b")
+nowdy=$(date +"%d")
+nowyr=$(date +"%y")
+andthen=$(date +"%T")
+if [ "$nowhr" == "13" ]&&[ "$nowmin" -ge "45" ]&&[ "$nowmin" -lt "60" ] 
+#its midnight and before the 15 minute mark.  Should only run once per day. 
+then
+#stop screen: SIGTSTP is stop typed at terminal vs SIGSTOP which is stop process
+  echo "running screenlog cleanup process"
+  /bin/kill -s SIGTSTP `pidof screen`
+  cp ${file} ${file}.tmp
+  echo "#restart" $andthen > ${file}
+  # restart screen 
+  /bin/kill -s SIGCONT `pidof screen`
+  filedir=/mnt/space/workspace/instrument_processing/log
+  file2=screenlog.0
+  mv ${filedir}/${file2}.tmp ${filedir}/archive/${file2}.bkup_$nowdy$nowmonth$nowyr\_$nowhr$nowmin
+  gzip ${filedir}/archive/${file2}.bkup_$nowdy$nowmonth$nowyr\_$nowhr$nowmin
+  if [ -e "../log/screenlog.0.processed" ]
+      then
+      rm ../log/screenlog.0.processed
+  fi
+#move both to bkup directory with the date in the name
+# need to handle startup notation in the screenlog.0 file,
+# and setup screen to start automatically, plus match
+# phone numbers to station numbers.
+fi 
+
+echo "done cleaning up screenlog, heading to plot data"
+gnuplot/batch_plot_interactive_commands.sh
+echo "data plots completed"
+
+echo "calculating stats for sql update"
+calc_stats.pl
+echo "calculating stats for sql update complete"
+
+echo "synching data to webserver"
+/usr/bin/rsync -rv /mnt/space/workspace/instrument_processing/data/ /var/lib/tomcat7/webapps/ROOT/data/
+echo "rsync to tomcat directory complete\n"
+echo "removing screenlog.0.processed\n"
+rm ${file}.processed
+echo "complete\n"

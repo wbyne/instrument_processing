@@ -48,7 +48,7 @@ my @hour;
 my @minute;
 my @value;
 
-use sort "stable"; #changed from "_mergesort" 19Sep21 b/c sort now uses a stable mergesort
+use sort "_mergesort";
 
 my $savepath;
 

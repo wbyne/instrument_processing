@@ -1,0 +1,434 @@
+#!/usr/bin/perl -w
+
+#This script is the latest update to the script written in late 2018 to find rainfall events based
+# on hydrograph duration. It started for a presentation, and was only intended to find rainfall
+# events based on interevent period.  That was quickly determined to be ineffective, and this one
+# was generated.  At some point, I made some tweaks or errors in this file, so that I wasn't sure
+# this was the correct file.  I searched, and all revisions of this file had the same errors, so
+# I just corrected them and carried on.  In particular, the COM calc used i instead of ii, and the
+# for loop counted to jj while jj was undefined (it still worked, however).  So, I added in some
+# checks for when the water level drops right after small rain values (0001), most likely due to
+# air pressure changes, accuracy of the instrument, or some other cause.  I also added a statement
+# to stop the hydrograph recording interval if the rainfall event was small, creek change was small,
+# and duration greater than 1 hour.  As of today, this is the latest and greatest and working version.
+# -fwb-29Oct20
+use DateTime;
+
+my $lastraintime = 0;
+my @rainstarttime = ();
+my @rainstartlineno = ();
+my @rainstoptime = ();
+my @rainstoplineno = ();
+my @rainvolume = ();
+my @timeseries = ();
+
+$savepath = "/mnt/space/workspace/instrument_processing/data/site";
+my @paramlist = qw(RAIN LIGHT TEMP DEPTH ANALOG TEMP_RTC);
+my @stationlist = qw(3000 3100 3200 3300 3400 3500 3600);# 200 300 400 500 600 700 800 900 10000 1100 1200);
+
+for $ii (0 ..$#stationlist) {
+    #for $jj (0 ..$#paramlist) {
+    for $jj (0 ..0) {
+	$kk = 0;
+	$ll = 0;
+      $lastraintime = 0;
+      $rainstarttime[$ii][$jj][$kk] = 0;
+      $rainstartlineno[$ii][$jj][$kk] = 0;
+      $rainstoptime[$ii][$jj][$kk] = 0;
+      $rainstoplineno[$ii][$jj][$kk] = 0;
+      $rainvolume[$ii][$jj][$kk] = 0;
+
+    if (-e "$savepath/$stationlist[$ii]/ALLDATA/$stationlist[$ii]_ALLDATA_Summary.csv" ) {
+      open (INPUT_FILE, "$savepath/$stationlist[$ii]/ALLDATA/$stationlist[$ii]_ALLDATA_Summary.csv") or die "Can\'t find INPUT_FILE\n";
+     	$linecounter = 0;
+     	@linearray = ();
+      	while ($_=<INPUT_FILE>) {
+        	if ($_ =~ /^#/) {
+       	   	next;
+        }
+      	      	if ($_ =~ /\+CMT/) {
+       	   	next;
+		}
+		if ($_ =~ /00\/00\/00/) {
+		    next;
+  	        }
+		if ($_ =~ /01\/01\/00/) {
+		    next;
+  	        }
+	chomp $_;
+        $linearray[$linecounter] = $_;
+        $linecounter++;
+      }#while input_file open and read file
+      close(INPUT_FILE);
+    
+      open (INPUT_FILE2, ">","$savepath/$stationlist[$ii]/ALLDATA/$stationlist[$ii]_ALLDATA_Summary_clean_data.csv") or die "Can\'t find INPUT_FILE\n";
+        print INPUT_FILE2 "#Station,Date_Time,Date_Time_Adj,Rain_hundredths,Light,Temp_F,Depth_Hundredths_of_Feet,Analog,Temp_RTC_F\n";
+        for ($linecounter=0; $linecounter<=$#linearray; $linecounter++) {
+            print INPUT_FILE2 "$linearray[$linecounter] \n";
+            #print STDOUT "$linearray[$linecounter] \n";
+        }
+      close(INPUT_FILE2);
+      
+      ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$iisdst) = localtime(time);
+      my @abbr = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
+      print "$abbr[$mon] $mday\n";
+      $year += 1900; #year is an offset from 1900
+      #$year = sprintf("%02d", $year % 100); #calculate 2-digit year
+
+      $currdate = DateTime->new(
+	  year      => $year,
+	  month     => $mon+1, #month goes from 0..11....
+	  day       => $mday,
+	  hour      => $hour,
+	  minute 	  => $min,
+	  time_zone => "America/New_York",
+	  );
+
+      #### CALCULATE AVERAGE DEPTH FOR THIS TIME SERIES
+      for ($linecounter=0; $linecounter<=$#linearray; $linecounter++) {
+	  #split the entry in linearray
+	  ($stat, $dttmp1, $dttmp2, $rain_value, $light_value, $temp_value, $depth_value, $analog_value, $temprtc_value ) = split ",",$linearray[$linecounter];
+	  $ave_depth = $ave_depth + $depth_value;
+      }
+      $ave_depth = $ave_depth/$#linearray;
+      #### END CALCULATE AVERAGE DEPTH
+      
+      for ($linecounter=0; $linecounter<=$#linearray; $linecounter++) {
+	  #split the entry in linearray
+	  ($stat, $dttmp1, $dttmp2, $rain_value, $light_value, $temp_value, $depth_value, $analog_value, $temprtc_value ) = split ",",$linearray[$linecounter];
+	  ($datedate, $timetime) = split " ",$dttmp1;
+	  ($dtdtadj, $tmtmadj) = split " ",$dttmp2;
+	  if ($rain_value > 0) {
+	      #as I recall, if it starts to rain again, and the level is high, it can record negative numbers for depth.
+	      # so, in that case, we use the entire *time series* ave depth as the base value.
+	      if ($lastraintime == 0) {
+		  if ($depth_value < $ave_depth) {
+		      $depth_base = $depth_value;
+		  }
+		  else {
+		      $depth_base = $ave_depth;
+		  }
+		  $rainstarttime[$ii][$jj][$kk] = $dtdtadj." ".$tmtmadj;
+		  $rainstartlineno[$ii][$jj][$kk] = $linecounter;
+		  #calculate an event start time object
+		  ($datemon, $dateday, $dateyr) = split "\/",$dtdtadj;
+		  $dateyr=2000+$dateyr; #correct for 4 year type.  
+		  ($timehr, $timemin) = split ":",$tmtmadj;
+		  #convert to datetime object:
+		  $startdate = DateTime->new(
+		      year      => $dateyr,
+		      month     => $datemon,
+		      day       => $dateday,
+		      hour      => $timehr,
+		      minute    => $timemin,
+		      time_zone => "America/New_York",
+		      );
+	      }
+	      #calculate a current time object, subtract, and use to calculate the COM for rain and depth
+	      ($datemon, $dateday, $dateyr) = split "\/",$dtdtadj;
+	      $dateyr=2000+$dateyr; #correct for 4 year type.  
+	      ($timehr, $timemin) = split ":",$tmtmadj;
+	      #convert to datetime object:
+	      $currdate = DateTime->new(
+		  year      => $dateyr,
+		  month     => $datemon,
+		  day       => $dateday,
+		  hour      => $timehr,
+		  minute    => $timemin,
+		  time_zone => "America/New_York",
+		  );
+	      my $dur = $currdate->subtract_datetime_absolute( $startdate );
+	      #added 5 mins since the first rain event will be reported after 5 minutes of rain.
+	      my $dur_mins = (($dur->seconds())/60.)+5;
+	      #don't need since we started by adding 5 mins to dur_mins.  if ($dur_mins < 1) { $dur_mins = 1; } #if its raining now, use 1 to capture the COM at time = 0
+	      $lastraintime = $dtdtadj." ".$tmtmadj;
+	      $lastlc = $linecounter;
+	      $rainvolume[$ii][$jj][$kk] = $rainvolume[$ii][$jj][$kk]+$rain_value;
+	      #rainvolume jj=0 is rain, jj=1 is depth,jj=2 is rain*duration (for COM), jj=3 is depth*duration (for COM)
+	      if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+            $rainvolume[$ii][1][$kk] = $rainvolume[$ii][1][$kk]+($depth_value-$depth_base);
+          }
+          $rainvolume[$ii][2][$kk] = $rainvolume[$ii][2][$kk]+($rain_value*$dur_mins);
+          if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+            $rainvolume[$ii][3][$kk] = $rainvolume[$ii][3][$kk]+(($depth_value-$depth_base)*$dur_mins);
+          }
+	      #$rainvolume[$ii][4][$kk] and $rainvolume[$ii][5][$kk] are rain COM and depth COM, respectively
+	      if ($rain_value > $rainvolume[$ii][6][$kk]) { 
+            $rainvolume[$ii][6][$kk] = $rain_value; 
+            $rainvolume[$ii][7][$kk] = $dur_mins; 
+	      } #save peak rain (jj=6, time to peak jj=7)
+	      if (($depth_value-$depth_base) > $rainvolume[$ii][8][$kk]) { 
+            $rainvolume[$ii][8][$kk] = ($depth_value-$depth_base); 
+            $rainvolume[$ii][9][$kk] = $dur_mins; 
+	      } #save peak depth (jj=8, time to peak jj=9)
+	      
+	      $timeseries[$ii][$jj][$kk][$ll] =  $dtdtadj." ".$tmtmadj." ".$rain_value." ".$light_value." ".$temp_value." ".$depth_value." ".$analog_value." ".$temprtc_value;
+	      $ll++;
+	  }
+	  if ($rain_value == 0) {
+	      if ($lastraintime == 0) {
+		  #nothing to see here, move along
+	      }
+	      if ($lastraintime != 0) {
+		  #construct evaluation date:
+		  ($dateeval,$timeeval) = split " ",$lastraintime;
+		  ($datemon, $dateday, $dateyr) = split "\/",$dateeval;
+		  $dateyr=2000+$dateyr; #correct for 4 year type.  This script will be good until the year 3000.
+		  ($timehr, $timemin) = split ":",$timeeval;
+		  #convert to datetime object:
+		  $evaldate = DateTime->new(
+		      year      => $dateyr,
+		      month     => $datemon,
+		      day       => $dateday,
+		      hour      => $timehr,
+		      minute    => $timemin,
+		      time_zone => "America/New_York",
+		      );
+
+		  #construct current date/time:
+		  ($datemon, $dateday, $dateyr) = split "\/",$dtdtadj;
+		  $dateyr=2000+$dateyr; #correct for 4 year type.  This script will be good until the year 3000.
+		  ($timehr, $timemin) = split ":",$tmtmadj;
+		  #convert to datetime object:
+		  $currdate = DateTime->new(
+		      year      => $dateyr,
+		      month     => $datemon,
+		      day       => $dateday,
+		      hour      => $timehr,
+		      minute    => $timemin,
+		      time_zone => "America/New_York",
+		      );
+		  #a test to see if this fixes the case where it rains, and then the file ends
+		  # before one of the reset conditions occurs (>2880 mins, or depth<10 & >12 hours)
+ 	      $rainstoptime[$ii][$jj][$kk] = $lastraintime;
+		  $rainstoplineno[$ii][$jj][$kk] = $lastlc;
+		  
+		  #durations are:
+		  #  $dur = time from lastraintime until now
+		  #  $rain_dur = time from startdate (start of rain) to lastraintime 
+		  #  $event_dur = time from start of rainfall until now
+		  my $dur = $currdate->subtract_datetime_absolute( $evaldate );
+		  my $rain_dur = $evaldate->subtract_datetime_absolute( $startdate);
+		  my $event_dur = $currdate->subtract_datetime_absolute( $startdate );
+		  #added 5min to rain_dur and event_dur since startdate occurs after rainfall has been logged for 5 minutes
+		  #  $dur_mins is time since last rain, so its calculated okay
+		  my $dur_mins       = (($dur->seconds())/60.);  
+		  my $rain_dur_mins  = (($rain_dur->seconds())/60.)+5;
+		  my $event_dur_mins = (($event_dur->seconds())/60.)+5;
+		  #### I realize that this next section is somewhat repetitive and could be combined,
+		  ####  but it is easy to read and (re)learn this way.-wb-28Dec18
+		  if ($dur_mins>2880) { #well, it's been two days.  Let's assume it's time to pull the plug
+		      $rainstoptime[$ii][$jj][$kk] = $lastraintime;
+		      $rainstoplineno[$ii][$jj][$kk] = $lastlc;
+		      $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+		      $lastraintime = 0;
+		      $lastlc = 0;
+		      $kk++;
+		      $ll = 0;
+		  }
+		  elsif (((abs($depth_value-$depth_base))<10)&&($dur_mins>720)) { #call it the end of the hydrograph.  it's been 12 hours and the depth difference has dropped to 0.1'
+		      $rainstoptime[$ii][$jj][$kk] = $lastraintime;
+		      $rainstoplineno[$ii][$jj][$kk] = $lastlc;
+		      $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+		      $lastraintime = 0;
+		      $lastlc = 0;
+		      $kk++;
+		      $ll = 0;
+		  }
+          elsif (($rainvolume[$ii][0][$kk]<=5) && (abs($depth_value-$depth_base)<3)&&($dur_mins>60)) { #small rainfall event that hasn't caused a hydrologic response in an hour
+		      $rainstoptime[$ii][$jj][$kk] = $lastraintime;
+		      $rainstoplineno[$ii][$jj][$kk] = $lastlc;
+		      $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+		      $lastraintime = 0;
+		      $lastlc = 0;
+		      $kk++;
+		      $ll = 0;
+          }
+		  elsif ($dur_mins < 360) { #6 hours to wait for hydrograph rise due to 8 & 11, after rain has stopped (lastraintime)
+		      # dont need to recalc current date as its done above.
+		      # but you do need to subtract the startdate to get a duration
+		      #my $event_dur = $currdate->subtract_datetime_absolute( $startdate );
+		      #  store in rainvolume[$ii][3][$kk]
+		      #my $event_dur_mins = (($event_dur->seconds())/60.);
+		      #if ($event_dur_mins < 1) { $event_dur_mins = 1; }
+		      if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+                $rainvolume[$ii][1][$kk] = $rainvolume[$ii][1][$kk]+($depth_value-$depth_base);#keep adding depth values
+              }
+              if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+                $rainvolume[$ii][3][$kk] = $rainvolume[$ii][3][$kk]+(($depth_value-$depth_base)*$event_dur_mins);#keep adding depth values
+              }
+              $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+		      if (($depth_value-$depth_base) > $rainvolume[$ii][8][$kk]) { 
+                $rainvolume[$ii][8][$kk] = ($depth_value-$depth_base); 
+                $rainvolume[$ii][9][$kk] = $event_dur_mins; 
+		      } #save peak depth
+
+		      $timeseries[$ii][$jj][$kk][$ll] =  $dtdtadj." ".$tmtmadj." ".$rain_value." ".$light_value." ".$temp_value." ".$depth_value." ".$analog_value." ".$temprtc_value;
+		      $ll++;
+		  }
+		  elsif ((abs($depth_value-$depth_base))>5) { #been going for more than 6 hours, but the value is changing still.  keep logging.
+		      # dont need to recalc current date as its done above.
+		      # but you do need to subtract the startdate to get a duration
+		      #my $event_dur = $currdate->subtract_datetime_absolute( $startdate );
+		      #  store in rainvolume[$ii][3][$kk]
+		      #my $event_dur_mins = (($event_dur->seconds())/60.);
+		      #if ($event_dur_mins < 1) { $event_dur_mins = 1; }
+		      if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+                $rainvolume[$ii][1][$kk] = $rainvolume[$ii][1][$kk]+($depth_value-$depth_base);#keep adding depth values
+              }
+              if ($depth_value-$depth_base > 0) { #had some areas with slightly negative flows with 0001" of rain
+                $rainvolume[$ii][3][$kk] = $rainvolume[$ii][3][$kk]+(($depth_value-$depth_base)*$event_dur_mins);#keep adding depth values
+              }
+		      $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+      		  if (($depth_value-$depth_base) > $rainvolume[$ii][8][$kk]) { 
+                $rainvolume[$ii][8][$kk] = ($depth_value-$depth_base); 
+                 $rainvolume[$ii][9][$kk] = $event_dur_mins; 
+		      } #save peak depth
+		      $timeseries[$ii][$jj][$kk][$ll] =  $dtdtadj." ".$tmtmadj." ".$rain_value." ".$light_value." ".$temp_value." ".$depth_value." ".$analog_value." ".$temprtc_value;
+		      $ll++;
+		  }
+		  else  { #something going wrong.  stop it anyway and we'll look in the output for the problem(s).
+		      $rainstoptime[$ii][$jj][$kk] = $lastraintime;
+		      $rainstoplineno[$ii][$jj][$kk] = $lastlc;
+		      $rainvolume[$ii][4][$kk] = $event_dur_mins; #save for ref later
+		      $rainvolume[$ii][5][$kk] = $rain_dur_mins; #save for ref later
+		      $lastraintime = 0;
+		      $lastlc = 0;
+		      $kk++;
+		      $ll = 0;
+		  }#else for ($dur_mins>2880)
+	      }#lastraintime = 0
+	  }#if value == 0
+      }#  for ($linecounter=$#linearray; $kk>0; $kk--)
+    }#if (-e "$savepath/$stationlist[$ii]/$paramlist[$jj]/$stationlist[$ii]_$paramlist[$jj].txt" )
+    }#for my $jj (0 ..$#paramlist)
+}#for my $ii (0 ..$#stationlist)
+
+
+      
+#### COM Calc
+#### calc COM of rainfall, and depth
+####  subtract COMs for time to rise/lag time
+####  calc stats on the rise/lag times (max, min, ave, mean, std dev)
+####  add print line to storm event prints below
+####  calc duration for each timeseries value, and print a 1 at the end for the values between storm and hydrograph COMs.
+for $ii (0 ..$#stationlist) {
+    for $kk (0 .. $#{$rainvolume[$ii][0]}) { #should throw an error; $#{$rainvolume[$ii][$jj]} to $#{$rainvolume[$ii][0]} b/c $jj was undefined here
+        print "kk: $kk\n"; #looking for a div by 0
+	if ($rainvolume[$ii][0][$kk] > 0) {
+        $com_calc[$ii][$kk][0] = $rainvolume[$ii][2][$kk]/$rainvolume[$ii][0][$kk]; #rain
+    }
+    else {
+        $com_calc[$ii][$kk][0] = -9999;
+    }
+    if ($rainvolume[$ii][1][$kk] > 0) {
+        $com_calc[$ii][$kk][1] = $rainvolume[$ii][3][$kk]/$rainvolume[$ii][1][$kk]; #depth
+    }
+    else {
+        $com_calc[$ii][$kk][1] = -9999;
+    }
+	}
+    for $kk (0 .. $#{$rainvolume[$ii][$jj]}) {
+	print STDOUT "$ii, $kk, $com_calc[$ii][$kk][0]\n"; #rain
+	print STDOUT "$ii, $kk, $com_calc[$ii][$kk][1]\n"; #depth
+    }
+}
+####  END COM Calc
+	    
+print STDOUT "$kk\n";
+print STDOUT "$kk\n";
+
+for $ii (0 ..$#stationlist) {
+    for $jj (0 ..0) {
+	#$kk = 0;
+	$ll = 0;
+	open (INPUT_FILE,">", "$savepath/$stationlist[$ii]/ALLDATA/$stationlist[$ii]_ALLDATA_CONDENSED.csv") or die "Can\'t find INPUT_FILE\n";
+	print INPUT_FILE "#Start_Time\tStop_Time\tRain_Duration_Mins\tHydro_Duration_Mins\tRain_COM\tHydro_COM\tPeak_Rain\tPeak_Rain_Dur\tPeak_Depth\tPeak_Depth_Dur\tStart_Line_No\tStop_Line_No\tRain_Vol\tDepth_\tHyetographs\n";
+	print STDOUT "#Start_Time\tStop_Time\tRain_Duration_Mins\tHydro_Duration_Mins\tRain_COM\tHydro_COM\tPeak_Rain\tPeak_Rain_Dur\tPeak_Depth\tPeak_Depth_Dur\tStart_Line_No\tStop_Line_No\tRain_Vol\tDepth_\tHyetographs\n";
+	for $kk (0 .. $#{$rainstarttime[$ii][$jj]}) {
+=begin commented code
+	    #construct evaluation date:
+	    ($dateeval,$timeeval) = split " ",$rainstarttime[$ii][$jj][$kk];
+	    ($datemon, $dateday, $dateyr) = split "\/",$dateeval;
+	    $dateyr=2000+$dateyr; #correct for 4 year type.  This script will be good until the year 3000.
+	    ($timehr, $timemin) = split ":",$timeeval;
+	    #convert to datetime object:
+	    $evaldate = DateTime->new(
+		year      => $dateyr,
+		month     => $datemon,
+		day       => $dateday,
+		hour      => $timehr,
+		minute    => $timemin,
+		time_zone => "America/New_York",
+		);
+
+	    #construct current date/time:
+	    ($datedate,$timetime) = split " ",$rainstoptime[$ii][$jj][$kk];
+	    ($datemon, $dateday, $dateyr) = split "\/",$datedate;;
+	    $dateyr=2000+$dateyr; #correct for 4 year type.  This script will be good until the year 3000.
+	    ($timehr, $timemin) = split ":",$timetime;
+	    #convert to datetime object:
+	    $currdate = DateTime->new(
+		year      => $dateyr,
+		month     => $datemon,
+		day       => $dateday,
+		hour      => $timehr,
+		minute    => $timemin,
+		time_zone => "America/New_York",
+		);
+
+	    my $dur = $currdate->subtract_datetime_absolute( $evaldate );
+	    #if (($dur->seconds)>3600) { #it's been more than an hour with no rain
+		$elapsed_time = ($dur->seconds)/60;		  
+end commented code
+=cut
+#comment    
+           $hydro_elapsed_time = $rainvolume[$ii][4][$kk];
+           $elapsed_time = $rainvolume[$ii][5][$kk];
+		      ##if (($depth_value-$depth_base) > $rainvolume[$ii][8][$kk]) { 
+			  ##$rainvolume[$ii][8][$kk] = ($depth_value-$depth_base); 
+			  ##$rainvolume[$ii][9][$kk] = $event_dur_mins; 
+		      ##} #save peak depth
+        #Peak_Depth	Peak_Depth_Dur	Start_Line_No	Stop_Line_No	Rain_Vol	Depth_
+        if (!defined($rainvolume[$ii][8][$kk])) { #peak depth
+            $rainvolume[$ii][8][$kk]=-9999;
+        }
+        if (!defined($rainvolume[$ii][9][$kk])) { #peak_depth_dur
+            $rainvolume[$ii][9][$kk]=-9999;
+        }
+        if (!defined($rainvolume[$ii][1][$kk])) { #total depth
+            $rainvolume[$ii][1][$kk]=-9999;
+        }
+
+	    print INPUT_FILE "$rainstarttime[$ii][$jj][$kk]\t$rainstoptime[$ii][$jj][$kk]\t$elapsed_time\t$hydro_elapsed_time\t$com_calc[$ii][$kk][0]\t$com_calc[$ii][$kk][1]\t$rainvolume[$ii][6][$kk]\t$rainvolume[$ii][7][$kk]\t$rainvolume[$ii][8][$kk]\t$rainvolume[$ii][9][$kk]\t$rainstartlineno[$ii][$jj][$kk]\t$rainstoplineno[$ii][$jj][$kk]\t$rainvolume[$ii][$jj][$kk]\t$rainvolume[$ii][1][$kk]\t";
+	    print STDOUT     "$rainstarttime[$ii][$jj][$kk]\t$rainstoptime[$ii][$jj][$kk]\t$elapsed_time\t$hydro_elapsed_time\t$com_calc[$ii][$kk][0]\t$com_calc[$ii][$kk][1]\t$rainvolume[$ii][6][$kk]\t$rainvolume[$ii][7][$kk]\t$rainvolume[$ii][8][$kk]\t$rainvolume[$ii][9][$kk]\t$rainstartlineno[$ii][$jj][$kk]\t$rainstoplineno[$ii][$jj][$kk]\t$rainvolume[$ii][$jj][$kk]\t$rainvolume[$ii][1][$kk]\t";
+
+    	for $ll (0 .. $#{$timeseries[$ii][$jj][$kk]}) {
+		(@tmp) = split " ",$timeseries[$ii][$jj][$kk][$ll];
+		print INPUT_FILE "$tmp[2]\t";
+		print STDOUT "$tmp[2]\t";
+	    }
+	    print INPUT_FILE "\n";
+	    print STDOUT "\n";
+	}
+	print INPUT_FILE "#No of Events: ($#{$rainstarttime[$ii][$jj]})+1 \n ($#{$rainstarttime[$ii][$jj]})+1 \n";
+	print STDOUT "#No of Events: ($#{$rainstarttime[$ii][$jj]})+1 \n ($#{$rainstarttime[$ii][$jj]})+1 \n";
+	for $kk (0 .. $#{$rainstarttime[$ii][$jj]}) {
+	    print INPUT_FILE "\n\n";
+	    print STDOUT "\n\n";
+	    for $ll (0 .. $#{$timeseries[$ii][$jj][$kk]}) {
+		(@tmp) = split " ",$timeseries[$ii][$jj][$kk][$ll];
+		# $timeseries[$ii][$jj][$kk][$ll] =  $dtdtadj." ".$tmtmadj." ".$rain_value." ".$light_value." ".$temp_value." ".$depth_value." ".$analog_value." ".$temprtc_value;
+		print INPUT_FILE "$tmp[0] $tmp[1] $kk $tmp[2] $tmp[3] $tmp[4] $tmp[5] $tmp[6] $tmp[7]\n";
+		print STDOUT     "$tmp[0] $tmp[1] $kk $tmp[2] $tmp[3] $tmp[4] $tmp[5] $tmp[6] $tmp[7]\n";
+	    }
+	}
+	close (INPUT_FILE);
+    }
+}	    
+

@@ -1,0 +1,8 @@
+#.screenrc
+# taken from the man file and the examplerc in /usr/share/doc/screen/examples
+chdir /home/fbyne/workspace/instrument_processing/log
+autodetach on
+hardcopy_append on
+hardcopydir /home/fbyne/workspace/instrument_processing/log/screenlog.0
+screen -d -m -L
+

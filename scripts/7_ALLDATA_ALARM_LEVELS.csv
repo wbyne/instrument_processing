@@ -1,0 +1,23 @@
+#STATION,PARAM,TIME,CRITERIA,VALUE,DIST_LIST
+#Everybody gets warned on high rainfall
+ALL,RAIN,15MIN,TOTAL,0.2,ALL
+ALL,RAIN,1HR,TOTAL,0.5,ALL
+ALL,RAIN,4HR,TOTAL,1,ALL
+ALL,RAIN,24HR,TOTAL,0.5,ALL
+#
+#Low Battery
+#ALL,ANALOG,1HR,MIN,11.5,MAINTENANCE
+ALL,VOLT,1HR,MIN,11.5,MAINTENANCE
+#STATION 1010,ANALOG,24HR,MIN,11.5,MAINTENANCE
+#
+#Depth 
+#STATION 1010,DEPTH,15MIN,MAX,3,ALL
+#
+#Email distribution lists
+LIST,EMAIL,0,ALL,wes2@watergeorgia.com 
+#,wes@watergeorgia.com,oflite@augustaga.gov,matt.erickson@phinizycenter.org
+LIST,EMAIL,1,MAINTENANCE,maint@watergeorgia.com
+#
+#Text Message Distribution lists
+#LIST,TEXT,0,ALL,7064145535@txt.att.net:Wes Byne
+LIST,TEXT,0,ALL,7064145535@vtext.com:Wes Byne

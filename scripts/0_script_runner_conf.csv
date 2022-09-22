@@ -1,0 +1,18 @@
+#Concept: this file is designed to move the individual stations and parameters out of the script
+# files so that it is easier to manage, especially since we're about to add a buuuuunch of new
+# stations. 
+# format should be: 
+#	script_name: stations:listNo: StaNo1,StaNo2,...
+#	script_name: stat_desc:listNo: StaNo1|Desc1,StaNo2|Desc2
+#	script_name: params: param_list
+# -fwb-23Jan22
+#
+global_station_list:stations:1050:1060:1070:1090:1130:6080:6100:6170
+#
+#alerts_not_reporting_2hrs.pl:params:#alerts_not_reporting_2hrs.pl:stations:#alerts_not_reporting_2hrs.pl:stat_desc:
+#batch_plot_interactive_commands.sh:stations:
+#batch_plot_interactive_commands.Sav.sh:stations:
+#calc_stats.pl:params:#calc_stats.pl:stations:
+#calc_stats_alldata.pl:params:#calc_stats_alldata.pl:stations:#calc_stats_alldata.pl:stat_desc:
+#calc_stats_alldata.Sav.pl:params:
+#alerts_all_params.pl:params:#alerts_all_params.pl:stations:#alerts_all_params.pl:stat_desc:
